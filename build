@@ -1,0 +1,167 @@
+#!/bin/mksh
+#for 32-bit build is needed run the command from mingw32 comand prompt, otherwise no output file is created
+#by calling build script without any parameters will source code compiled with all modules at once (takes more time if it's not fresh compilation) with given (default) settings
+#by calling build script with parameters will they firest parsed (if something wrong script ends with printing help) and then is checked all if they are changed from last compilation 
+#if the modele is changed from last compilation it is compiled into object file (.o file) and the variable SOURCE_IS_CHANGED is set to true
+#if is variable SOURCE_IS_CHANGED set to true, then linking of all object file is run and generate output executable file
+
+##########paths#########
+WIN_CC_64="/mingw64/bin/gcc.exe -m64"
+WIN_CC_32="/mingw32/bin/gcc.exe -m32"
+LINUX_CC_32="gcc -m32"
+LINUX_CC_64="gcc -m64"
+CC=$WIN_CC_64
+GENPLIB_PATH="D:/C/my_c_lib/genplib"
+GENPLIB=genplib_win64
+NETWORKLIB_PATH="D:/C/my_c_lib/network_lib"
+NETWORKLIB=network_win64
+GTK_LOADING_WINDOW=gtk_loading_win64
+GTK_LOADING_WINDOW_PATH="D:/C/my_c_lib/gtk_loading_window"
+WIN_SOCK_LIBRARY=wsock32
+GTK_LIBRARY_PATH=$(/mingw64/bin/pkg-config --cflags gtk+-3.0)
+GTK_LIBRARY=$(/mingw64/bin/pkg-config --libs gtk+-3.0)
+SQLITE_LIBRARY=$(/mingw64/bin/pkg-config --libs sqlite3)
+SRC_PATH="src"
+OUTPUT="computer_health.exe"
+
+##########modules########
+MODUL[0]="main"
+
+
+####utility variable####
+FORCE_BUILD=false
+SOURCE_IS_CHANGED=false
+LINK_ONLY=false
+
+function print_help
+{
+	echo "-h = print help"
+	echo "-p win32/win64/linux32/linux64 = set build platform 32-bit or 64-bit for Linux or Windows operating system"
+	echo "-c = clean, remove all build files"
+	echo "-f = force build"
+	echo "-l = link modules only without compilation" 
+	exit 0
+}
+
+
+if [ $# -eq 0 ]; then
+	#defailt compile command
+	
+	MODULES=""
+	INDEX=0
+    	while [ $INDEX -lt ${#MODUL[@]} ]; do
+		MODULES="$MODULES $SRC_PATH/${MODUL[$INDEX]}.c"
+		INDEX=$(($INDEX+1))
+	done
+#-mwindows - window only application
+#-mconsole - consol and window application
+	$($CC $MODULES -o $OUTPUT -g -v -mconsole -Wall $GTK_LIBRARY_PATH $GTK_LIBRARY -I$GENPLIB_PATH/include -I$NETWORKLIB_PATH/include -L$GENPLIB_PATH  -L$NETWORKLIB_PATH -l$NETWORKLIB -l$GENPLIB -l$WIN_SOCK_LIBRARY $SQLITE_LIBRARY)
+else
+	#parse input parameters
+	while [ $# -gt 0 ]; do
+		if [ $1 = "-p" ]; then
+			shift
+
+			if [ $1 = "win32" ]; then
+				CC=$WIN_CC_32
+				GENPLIB=genplib_win32
+				NETWORKLIB=network_win32
+				GTK_LOADING_WINDOW=gtk_loading_win32
+			elif [ $1 = "win64" ]; then
+				CC=$WIN_CC_64
+				GENPLIB=genplib_win64
+				NETWORKLIB=network_win64
+				GTK_LOADING_WINDOW=gtk_loading_win64
+			elif [ $1 = "linux32" ]; then
+				CC=$LINUX_CC_32
+				GENPLIB=genplib_linux32
+				NETWORKLIB=network_linux32
+				GTK_LOADING_WINDOW=gtk_loading_linux32
+			elif [ $1 = "linux64" ]; then
+				CC=$LINUX_CC_64
+				GENPLIB=genplib_linux64
+				NETOWKRLIB=network_linux64
+				GTK_LOADING_WINDOW=gtk_loading_linux64
+			else
+				echo "Wrong input parameter -> $1"
+				exit 1
+			fi
+		elif [ $1 = "-h" ]; then
+			echo "Build script help:"
+			print_help
+		elif [ $1 = "-f" ]; then
+			FORCE_BUILD=true
+		elif [ $1 = "-l" ]; then
+			LINK_ONLY=true
+			FORCE_BUILD=false
+		elif [ $1 = "-c" ]; then
+
+			if [ -d ./.src ]; then
+				rm -r -v ./.src 
+			fi
+
+			INDEX=0
+			while [ $INDEX -lt ${#MODUL[@]} ]; do
+				if [ -f ${MODUL[$INDEX]}.o ]; then
+					rm ${MODUL[$INDEX]}.o -v
+				fi
+				INDEX=$(($INDEX+1))
+			done
+
+			if [ -f $OUTPUT ]; then
+				rm $OUTPUT -v
+			fi
+
+			exit 0
+		else
+			echo "Wrong input!"
+			print_help
+		fi
+
+		shift
+	done
+
+	if [ ! -d ./.src ]; then
+		mkdir ./.src
+	fi
+
+	#build moduels if they changed or in force build
+	INDEX=0
+	while [ $INDEX -lt ${#MODUL[@]} ]; do
+
+		if [ $LINK_ONLY=false ]; then
+			DIFFERENCE_H=""
+
+			DIFFERENCE_C=$(diff $SRC_PATH/${MODUL[$INDEX]}.c ./.src/${MODUL[$INDEX]}.c)
+
+			if [ -f $SRC_PATH/${MODUL[$INDEX]}.h ]; then 
+				DIFFERENCE_H=$(diff $SRC_PATH/${MODUL[$INDEX]}.h ./.src/${MODUL[$INDEX]}.h)
+			fi
+		
+			if [ ! -f ${MODUL[$INDEX]}.o ] || [ $FORCE_BUILD = true ] || [ ${#DIFFERENCE_C} -gt 0 ] || [ ${#DIFFERENCE_H} -gt 0 ]; then
+				$($CC $SRC_PATH/${MODUL[$INDEX]}.c -c -g -mwindows -Wall -I$GENPLIB_PATH/include $GTK_LIBRARY_PATH -I$NETWORKLIB_PATH/include $SQLITE_LIBRARY)
+
+				$(cp $SRC_PATH/${MODUL[$INDEX]}.c ./.src)
+
+				if [ -f $SRC_PATH/${MODUL[$INDEX]}.h ]; then
+					$(cp $SRC_PATH/${MODUL[$INDEX]}.h ./.src)
+				fi
+
+				SOURCE_IS_CHANGED=true
+			fi
+		fi
+		BUILD_COMMAND="$BUILD_COMMAND ${MODUL[$INDEX]}.o"
+		INDEX=$(($INDEX+1))
+	done
+
+	BUILD_COMMAND="$BUILD_COMMAND -o $OUTPUT -g -mconsole -Wall"
+
+	#execute the build command
+	if [ $SOURCE_IS_CHANGED = true ] || [ $LINK_ONLY = true ]; then
+		echo "Linking executable file."
+
+		$($CC $BUILD_COMMAND $GTK_LIBRARY $SQLITE_LIBRARY -L$GENPLIB_PATH -l$GENPLIB -l$WIN_SOCK_LIBRARY -L$NETWORKLIB_PATH -l$NETWORKLIB)
+	else
+		echo "Modules was not changed. Build is not necessary. For force build use -f option."
+	fi
+fi

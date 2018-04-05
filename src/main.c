@@ -227,7 +227,7 @@ gboolean draw_callback(GtkWidget *widget, cairo_t *cr, gpointer param)
 	if(this->deduction%10 == 0)
 	{
 		this->label_position[0] = rand()%((int)(this->geometry.width-extents.width));
-		this->label_position[1] = rand()%((int)(this->geometry.height-extents.height));
+		this->label_position[1] = extents.height+(rand()%((int)(this->geometry.height-extents.height)));
 	}
 
 	cairo_move_to(cr, this->label_position[0], this->label_position[1]);

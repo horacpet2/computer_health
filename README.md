@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-# computer_health
+# Computer Health System
 
 Software for planing breaks at computer work
-=======
-# Computer Health System
->>>>>>> ac73

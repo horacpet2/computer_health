@@ -3,19 +3,23 @@
 #include <gtk/gtk.h>
 #include <time.h>
 
+#if defined(WIN32) || defined(WIN64)
+#include <windows.h>
+#endif
+
 /******************************** settings *****************************/
 #define MODE_WORK 0
 #define MODE_PAUZE 1
 
-#define WORK_INTERVAL 60*60 // 1 hodina
-#define PAUZE_INTERVAL 60*5
+#define WORK_INTERVAL 60*60	/** 1 hodina */
+#define PAUSE_DELAY 60*10	/** 10 minut */
+#define PAUZE_INTERVAL 60*5	/** 5 minut */
 
 /******************************** declaration **************************/
 
 struct _computer_health_
 {
 	GtkWidget* window;
-	GtkWidget* drawing_area;
 
 	int32_t deduction;
 	uint8_t mode;
@@ -60,17 +64,35 @@ void computer_health_set_pauze_state(computer_health* this);
  * function: computer_health_set_work_state - procedure for settings work state 
  * param: computer_health* this - pointer to computer_halth class object
  */ 
-void computer_health_set_work_state(computer_health* this);
+void computer_health_set_work_state(computer_health* this, int32_t deduction);
+
+/*
+ * key press event callback, if is set the pause state, then is available press 
+ * escape key for delay the pause for 10 minutes
+ */
+gboolean computer_health_key_press (GtkWidget *widget, GdkEventKey *event, gpointer param);
 
 
 /**************************** definition ******************************/
 
 int main(int argv, char** argc)
 {
+#if defined(WIN32) || defined(WIN64)
+	HWND var = GetConsoleWindow();
+	ShowWindow(var, SW_HIDE);
+#endif	
+
 	gtk_init(&argv, &argc);
+	
 	computer_health* ch_instance = computer_health_new();
-	computer_health_set_work_state(ch_instance);
+	computer_health_set_work_state(ch_instance, WORK_INTERVAL);
+	
 	gtk_main();
+
+#if defined(WIN32) || defined(WIN64)	
+	ShowWindow(var, SW_SHOW);
+#endif
+	
 	return 0;
 }
 
@@ -86,22 +108,38 @@ computer_health* computer_health_new()
 
 	this->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_default_size(GTK_WINDOW(this->window), this->geometry.width/2, this->geometry.height/2);
-	gtk_window_maximize(GTK_WINDOW(this->window));
+	//gtk_window_maximize(GTK_WINDOW(this->window));
 	gtk_window_set_resizable(GTK_WINDOW(this->window), FALSE);
 	gtk_window_fullscreen(GTK_WINDOW(this->window));
+	
+/*
+	GdkCursor * cursor = gdk_cursor_new_for_display(gdk_display_get_default(), GDK_BLANK_CURSOR);
+	GdkWindow * win = gtk_widget_get_window((this->window));
+	gdk_window_set_cursor(win, cursor);
+*/
 
-	this->drawing_area = gtk_drawing_area_new();
-	gtk_widget_set_size_request(GTK_WIDGET(this->drawing_area), this->geometry.width/2, this->geometry.height/2);
-
-	gtk_container_add(GTK_CONTAINER(this->window), this->drawing_area);
-
-	g_signal_connect(G_OBJECT(this->drawing_area), "draw", G_CALLBACK(draw_callback), this);
+	g_signal_connect(G_OBJECT(this->window), "draw", G_CALLBACK(draw_callback), this);
+	g_signal_connect(G_OBJECT(this->window), "key_release_event", G_CALLBACK(computer_health_key_press), this);
 	g_signal_connect(G_OBJECT(this->window), "destroy", G_CALLBACK(gtk_main_quit), NULL);
+	
 	g_timeout_add(1000, computer_health_callback, this);
 
 	gtk_widget_show_all(GTK_WIDGET(this->window));
 
 	return this;
+}
+
+gboolean computer_health_key_press (GtkWidget *widget, GdkEventKey *event, gpointer param)
+{
+	computer_health* this = (computer_health*) param;
+	
+	if(event->keyval == GDK_KEY_Escape)
+	{
+		computer_health_set_work_state(this, PAUSE_DELAY);
+	}
+
+printf("key pressed\n");
+	return TRUE;
 }
 
 uint32_t computer_health_count_time()
@@ -130,10 +168,10 @@ void computer_health_set_pauze_state(computer_health* this)
 	gtk_widget_set_visible(GTK_WIDGET(this->window), TRUE);
 }
 
-void computer_health_set_work_state(computer_health* this)
+void computer_health_set_work_state(computer_health* this, int32_t deduction)
 {
 	this->mode = MODE_WORK;
-	this->deduction = WORK_INTERVAL;
+	this->deduction = deduction;
 	gtk_widget_set_visible(GTK_WIDGET(this->window), FALSE);
 }
 
@@ -145,6 +183,8 @@ gboolean computer_health_callback(gpointer param)
 
 	if(this->mode == MODE_WORK)
 	{
+		gtk_window_set_keep_above(GTK_WINDOW(this->window), FALSE);
+
 		if(this->deduction > 0)
 		{
 			if(time_difference > 1)
@@ -170,6 +210,8 @@ gboolean computer_health_callback(gpointer param)
 	}
 	else if(this->mode == MODE_PAUZE)
 	{
+		gtk_window_set_keep_above(GTK_WINDOW(this->window), TRUE);
+
 		if(this->deduction > 0)
 		{
 			if(time_difference > 1)
@@ -180,7 +222,7 @@ gboolean computer_health_callback(gpointer param)
 				}
 				else
 				{
-					computer_health_set_work_state(this);
+					computer_health_set_work_state(this, WORK_INTERVAL);
 				}
 			}
 			else
@@ -190,17 +232,17 @@ gboolean computer_health_callback(gpointer param)
 		}
 		else
 		{
-			computer_health_set_work_state(this);
+			computer_health_set_work_state(this, WORK_INTERVAL);
 		}
 	}
 	else
 	{
-		computer_health_set_work_state(this);
+		computer_health_set_work_state(this, WORK_INTERVAL);
 	}
 
 	this->last_time = current_time;
-	gtk_widget_queue_draw(GTK_WIDGET(this->drawing_area));
-	printf("deduction: %d\n", this->deduction);
+	gtk_widget_queue_draw(GTK_WIDGET(this->window));
+	//printf("deduction: %d\n", this->deduction);
 	return TRUE;
 }
 
@@ -212,10 +254,10 @@ gboolean draw_callback(GtkWidget *widget, cairo_t *cr, gpointer param)
 	cairo_fill(cr);
 	
 	char label[6];
-	label[0] = (this->deduction/60) > 10 ? ((this->deduction/60)/10)+48 : '0';
-	label[1] = (this->deduction/60) > 10 ? ((this->deduction/60)%10)+48 : this->deduction/60 > 0 ? (this->deduction/60)+48 : '0';
+	label[0] = (this->deduction/60) > 9 ? ((this->deduction/60)/10)+48 : '0';
+	label[1] = (this->deduction/60) > 9 ? ((this->deduction/60)%10)+48 : this->deduction/60 > 0 ? (this->deduction/60)+48 : '0';
 	label[2] = ':';
-	label[3] = (this->deduction%60) > 10 ? ((this->deduction%60)/10+48) : '0';
+	label[3] = (this->deduction%60) > 9 ? ((this->deduction%60)/10+48) : '0';
 	label[4] = ((this->deduction%60)%10)+48;
 	label[5] = '\0';
 
